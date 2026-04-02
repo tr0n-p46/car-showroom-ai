@@ -5,8 +5,8 @@ import numpy as np
 
 # Initialize model (this happens once on startup)
 kokoro = Kokoro(
-    model_path="/models/kokoro-v0_19.onnx",
-    voices_path="/models/voices.bin"
+    model_path="/app/models/kokoro-v0_19.onnx",
+    voices_path="/app/models/voices.bin"
 )
 
 def generate_speech_wav(text: str, voice_id: str = "hf_alpha"):

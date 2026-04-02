@@ -23,6 +23,13 @@ async def vapi_tts_handler(request: Request):
     
     return Response(content=audio_content, media_type="audio/wav")
 
+@app.post("/upload")
+async def upload(file: UploadFile):
+    path = f"/app/models/{file.filename}"
+    with open(path, "wb") as f:
+        f.write(await file.read())
+    return {"status": "uploaded"}
+
 @app.post("/vapi-tools")
 async def vapi_tool_handler(request: Request):
     payload = await request.json()
