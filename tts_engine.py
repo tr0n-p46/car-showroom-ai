@@ -74,6 +74,10 @@ def _available_voice_ids(engine) -> set[str]:
     return set()
 
 
+def _is_male_voice_id(v: str) -> bool:
+    return isinstance(v, str) and v.startswith(("am_", "bm_", "hm_", "jm_", "pm_", "em_", "im_"))
+
+
 def _resolve_voice_id(engine, requested: str, fallback: str) -> str:
     requested = requested or ""
     fallback = fallback or "af_bella"
@@ -84,11 +88,18 @@ def _resolve_voice_id(engine, requested: str, fallback: str) -> str:
         return requested
     if fallback in voices:
         return fallback
+
     # Prefer a female-sounding default if present.
     for cand in ("af_bella", "af_nicole", "af_sarah", "af_sky", "hf_alpha"):
         if cand in voices:
             return cand
-    return next(iter(voices))
+
+    # Otherwise pick any non-male voice deterministically.
+    non_male = sorted(v for v in voices if not _is_male_voice_id(v))
+    if non_male:
+        return non_male[0]
+
+    return sorted(voices)[0]
 
 
 def _to_pcm16(samples: np.ndarray) -> np.ndarray:
@@ -140,7 +151,12 @@ def _encode_wav_mulaw(pcm16: np.ndarray, sample_rate: int) -> bytes:
     return header + fmt_chunk + data_chunk
 
 
-def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-us"):
+def generate_speech_wav(
+    text: str,
+    voice_id: str = "hf_alpha",
+    lang: str = "en-us",
+    fallback_voice_id: str | None = None,
+):
     """
     Generates a WAV file in memory. 
     hf_alpha = Hindi Female (Ananya)
@@ -163,7 +179,7 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
 
     # If the requested voice isn't actually in voices.bin, kokoro-onnx may fall back.
     # Resolve deterministically to avoid accidentally getting a male/default voice.
-    fallback_voice = os.getenv("KOKORO_VOICE_ID", "af_bella")
+    fallback_voice = fallback_voice_id or os.getenv("KOKORO_VOICE_ID", "af_bella")
     voice_id = _resolve_voice_id(engine, voice_id, fallback_voice)
 
     # Kokoro processes text and returns samples + sample_rate

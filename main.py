@@ -97,7 +97,12 @@ async def vapi_tts_handler(request: Request):
         voice_id = default_voice
 
     try:
-        audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id, lang=lang)
+        audio_content = tts_engine.generate_speech_wav(
+            text,
+            voice_id=voice_id,
+            lang=lang,
+            fallback_voice_id=default_voice,
+        )
         return Response(content=audio_content, media_type="audio/wav")
     except FileNotFoundError as e:
         # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
@@ -108,7 +113,12 @@ async def vapi_tts_handler(request: Request):
         )
     except Exception:
         # Last-resort fallback to a known voice id/lang so the call doesn't hang.
-        audio_content = tts_engine.generate_speech_wav(text, voice_id=default_voice_en, lang=lang_en)
+        audio_content = tts_engine.generate_speech_wav(
+            text,
+            voice_id=default_voice_en,
+            lang=lang_en,
+            fallback_voice_id=default_voice_en,
+        )
         return Response(content=audio_content, media_type="audio/wav")
 
 @app.post("/vapi-tools")
