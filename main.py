@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import json
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
@@ -266,15 +267,31 @@ async def vapi_tool_handler(request: Request):
     message = payload.get("message")
     
     # Extract tool call details
-    tool_call = message.get("toolCalls")[0]
-    function_name = tool_call.get("function").get("name")
-    args = tool_call.get("function").get("arguments")
+    tool_calls = (message or {}).get("toolCalls") or []
+    if not tool_calls:
+        return {"results": []}
+
+    tool_call = tool_calls[0] or {}
+    fn = (tool_call.get("function") or {})
+    function_name = fn.get("name")
+    raw_args = fn.get("arguments") or "{}"
+
+    # VAPI commonly sends `arguments` as a JSON string.
+    if isinstance(raw_args, str):
+        try:
+            args = json.loads(raw_args) if raw_args.strip() else {}
+        except json.JSONDecodeError:
+            args = {}
+    elif isinstance(raw_args, dict):
+        args = raw_args
+    else:
+        args = {}
 
     if function_name == "search_cars":
         result = tools.search_cars(
             budget=args.get("budget"),
             model=args.get("model"),
-            fuel_type=args.get("fuel_type")
+            fuel_type=args.get("fuel_type"),
         )
     elif function_name == "create_lead":
         result = tools.create_lead(
