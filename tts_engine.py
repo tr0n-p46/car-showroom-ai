@@ -65,8 +65,10 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha"):
     """
     engine = load_kokoro()
 
+    speed = float(os.getenv("KOKORO_SPEED", "1.25"))
+
     # Kokoro processes text and returns samples + sample_rate
-    samples, sample_rate = engine.create(text, voice=voice_id, speed=1.1, lang="en-us")
+    samples, sample_rate = engine.create(text, voice=voice_id, speed=speed, lang="en-us")
 
     # Kokoro returns float samples; many players/streamers (including some TTS
     # integrations) expect standard PCM16 WAV, not IEEE-float WAV.
