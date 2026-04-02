@@ -74,7 +74,11 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     # integrations) expect standard PCM16 WAV, not IEEE-float WAV.
     samples = np.asarray(samples)
     if samples.dtype.kind == "f":
-        # Kokoro floats are typically in [-1, 1]; clamp to be safe.
+        # Normalize to avoid clipping/distortion (often perceived as "noise").
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        if peak > 0:
+            # Bring peak to ~0.98 to preserve headroom.
+            samples = samples * (0.98 / peak)
         samples = np.clip(samples, -1.0, 1.0)
         samples = (samples * 32767.0).astype(np.int16)
     else:

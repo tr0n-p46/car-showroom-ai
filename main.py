@@ -15,6 +15,16 @@ _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 def _is_probably_hindi(text: str) -> bool:
     return bool(_DEVANAGARI_RE.search(text))
 
+_HINDI_LATIN_HINTS_RE = re.compile(
+    r"\b(namaste|namaskar|aap|aapka|aapki|kya|kaise|hai|haan|nahi|dhanyavaad|shukriya)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_probably_hindi_latin(text: str) -> bool:
+    # Lightweight Hinglish detection when user speaks Hindi in Latin script.
+    return bool(_HINDI_LATIN_HINTS_RE.search(text))
+
 
 def _looks_like_kokoro_voice_id(v: str) -> bool:
     # Kokoro voice ids are typically like "af_bella", "hf_alpha", etc.
@@ -55,26 +65,30 @@ async def vapi_tts_handler(request: Request):
         or "Hello"
     )
 
-    # Choose voice based on request or default to a soft female voice.
-    default_voice = os.getenv("KOKORO_VOICE_ID", "af_bella")
+    # Choose voice deterministically (female by default).
+    default_voice_en = os.getenv("KOKORO_VOICE_ID", "af_bella")
+    default_voice_hi = os.getenv("KOKORO_VOICE_ID_HI", "hf_alpha")
     requested_voice_id = (
         (payload.get("voice") or {}).get("id")
         or payload.get("voice_id")
         or payload.get("voiceId")
         or (message.get("voice") if isinstance(message, dict) else None)
-        or default_voice
+        or default_voice_en
     )
 
-    # VAPI may pass ElevenLabs voice ids here; only accept ids that look like Kokoro voice ids.
-    voice_id = requested_voice_id if _looks_like_kokoro_voice_id(requested_voice_id) else default_voice
-    # Force female voice unless caller explicitly requests a non-male Kokoro voice id.
-    if _is_male_kokoro_voice_id(voice_id):
-        voice_id = default_voice
+    # Language: default English, but auto-detect Hindi (Devanagari or common Latin hints).
+    lang_en = os.getenv("KOKORO_LANG", "en-us")
+    lang_hi = os.getenv("KOKORO_LANG_HI", "hi")
 
-    # Language: default English, but auto-detect Hindi script.
-    lang = os.getenv("KOKORO_LANG", "en-us")
-    if _is_probably_hindi(text):
-        lang = os.getenv("KOKORO_LANG_HI", "hi")
+    is_hi = _is_probably_hindi(text) or _is_probably_hindi_latin(text)
+    lang = lang_hi if is_hi else lang_en
+
+    # Voice: default per-language; only accept a Kokoro-looking id if it is not male.
+    default_voice = default_voice_hi if is_hi else default_voice_en
+    if _looks_like_kokoro_voice_id(requested_voice_id) and not _is_male_kokoro_voice_id(requested_voice_id):
+        voice_id = requested_voice_id
+    else:
+        voice_id = default_voice
 
     try:
         audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id, lang=lang)
@@ -88,8 +102,7 @@ async def vapi_tts_handler(request: Request):
         )
     except Exception:
         # Last-resort fallback to a known voice id/lang so the call doesn't hang.
-        fallback_lang = os.getenv("KOKORO_LANG", "en-us")
-        audio_content = tts_engine.generate_speech_wav(text, voice_id=default_voice, lang=fallback_lang)
+        audio_content = tts_engine.generate_speech_wav(text, voice_id=default_voice_en, lang=lang_en)
         return Response(content=audio_content, media_type="audio/wav")
 
 @app.post("/vapi-tools")
