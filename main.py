@@ -10,6 +10,8 @@ import uvicorn
 
 app = FastAPI()
 
+TTS_BUILD_ID = "1b3ea82"
+
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 
 
@@ -69,6 +71,14 @@ async def debug_voices(request: Request):
         return Response(content=b"Unauthorized", status_code=401, media_type="text/plain")
     voices = tts_engine.list_voice_ids()
     return {"count": len(voices), "voices": voices}
+
+@app.get("/debug/version")
+async def debug_version(request: Request):
+    debug_key = os.getenv("DEBUG_KEY")
+    provided = request.headers.get("x-debug-key") or request.query_params.get("key")
+    if not debug_key or provided != debug_key:
+        return Response(content=b"Unauthorized", status_code=401, media_type="text/plain")
+    return {"tts_build_id": TTS_BUILD_ID}
 
 # Vapi Custom Voice Provider Endpoint
 @app.post("/vapi-tts")
@@ -144,6 +154,7 @@ async def vapi_tts_handler(request: Request):
         )
         resp = Response(content=audio_content, media_type="audio/wav")
         # Debug headers so we can verify runtime behavior from VAPI logs.
+        resp.headers["x-tts-build"] = TTS_BUILD_ID
         resp.headers["x-tts-voice"] = voice_id
         resp.headers["x-tts-lang"] = lang
         resp.headers["x-tts-speed"] = os.getenv("KOKORO_SPEED", "")
