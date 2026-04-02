@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Request, UploadFile
+from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 import tools
@@ -31,21 +31,6 @@ async def vapi_tts_handler(request: Request):
             media_type="text/plain",
             status_code=500,
         )
-
-@app.post("/upload")
-async def upload(file: UploadFile):
-    # Save into the same directory TTS loads from.
-    model_dir = os.getenv("MODEL_DIR", "/models").strip()
-    os.makedirs(model_dir, exist_ok=True)
-
-    # Prevent path traversal (e.g. filename = "../../etc/passwd")
-    safe_name = os.path.basename(file.filename)
-    path = os.path.join(model_dir, safe_name)
-
-    with open(path, "wb") as f:
-        f.write(await file.read())
-    tts_engine.reset_kokoro()
-    return {"status": "uploaded"}
 
 @app.post("/vapi-tools")
 async def vapi_tool_handler(request: Request):
