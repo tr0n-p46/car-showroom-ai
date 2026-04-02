@@ -26,6 +26,11 @@ def _is_probably_hindi_latin(text: str) -> bool:
     # Lightweight Hinglish detection when user speaks Hindi in Latin script.
     return bool(_HINDI_LATIN_HINTS_RE.search(text))
 
+def _parse_allowed_voices(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {v.strip() for v in value.split(",") if v.strip()}
+
 
 def _looks_like_kokoro_voice_id(v: str) -> bool:
     # Kokoro voice ids are typically like "af_bella", "hf_alpha", etc.
@@ -99,15 +104,36 @@ async def vapi_tts_handler(request: Request):
     # kokoro-onnx commonly accepts "hi" or shorthand "h"; default to "h" for safety.
     lang_hi = os.getenv("KOKORO_LANG_HI", "h")
 
-    is_hi = _is_probably_hindi(text) or _is_probably_hindi_latin(text)
+    # VAPI may provide a language hint.
+    payload_lang = (
+        payload.get("language")
+        or payload.get("lang")
+        or (message.get("language") if isinstance(message, dict) else None)
+        or (message.get("lang") if isinstance(message, dict) else None)
+    )
+    is_hi = (
+        (isinstance(payload_lang, str) and payload_lang.lower().startswith("hi"))
+        or _is_probably_hindi(text)
+        or _is_probably_hindi_latin(text)
+    )
     lang = lang_hi if is_hi else lang_en
 
-    # Voice: default per-language; only accept a Kokoro-looking id if it is not male.
+    # Voice: force to an allowlist to prevent accidental male voices.
     default_voice = default_voice_hi if is_hi else default_voice_en
-    if _looks_like_kokoro_voice_id(requested_voice_id) and not _is_male_kokoro_voice_id(requested_voice_id):
+    allowed = _parse_allowed_voices(os.getenv("KOKORO_ALLOWED_VOICES"))
+    if not allowed:
+        # Safe defaults: female voices + Hindi female voices.
+        allowed = {"af_bella", "af_nicole", "af_sarah", "af_sky", "af_heart", "hf_alpha", "hf_beta"}
+
+    # Only honor requested voice if it is explicitly allowed and not male.
+    if (
+        _looks_like_kokoro_voice_id(requested_voice_id)
+        and requested_voice_id in allowed
+        and not _is_male_kokoro_voice_id(requested_voice_id)
+    ):
         voice_id = requested_voice_id
     else:
-        voice_id = default_voice
+        voice_id = default_voice if default_voice in allowed else sorted(allowed)[0]
 
     try:
         audio_content = tts_engine.generate_speech_wav(
@@ -116,7 +142,14 @@ async def vapi_tts_handler(request: Request):
             lang=lang,
             fallback_voice_id=default_voice,
         )
-        return Response(content=audio_content, media_type="audio/wav")
+        resp = Response(content=audio_content, media_type="audio/wav")
+        # Debug headers so we can verify runtime behavior from VAPI logs.
+        resp.headers["x-tts-voice"] = voice_id
+        resp.headers["x-tts-lang"] = lang
+        resp.headers["x-tts-speed"] = os.getenv("KOKORO_SPEED", "")
+        resp.headers["x-tts-sample-rate"] = os.getenv("TTS_SAMPLE_RATE", "")
+        resp.headers["x-tts-encoding"] = os.getenv("TTS_ENCODING", "")
+        return resp
     except FileNotFoundError as e:
         # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
         return Response(
