@@ -78,7 +78,8 @@ async def vapi_tts_handler(request: Request):
 
     # Language: default English, but auto-detect Hindi (Devanagari or common Latin hints).
     lang_en = os.getenv("KOKORO_LANG", "en-us")
-    lang_hi = os.getenv("KOKORO_LANG_HI", "hi")
+    # kokoro-onnx commonly accepts "hi" or shorthand "h"; default to "h" for safety.
+    lang_hi = os.getenv("KOKORO_LANG_HI", "h")
 
     is_hi = _is_probably_hindi(text) or _is_probably_hindi_latin(text)
     lang = lang_hi if is_hi else lang_en

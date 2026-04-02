@@ -2,9 +2,12 @@ import io
 import os
 from pathlib import Path
 import threading
+import wave
+import audioop
 
 import numpy as np
 import scipy.io.wavfile as wavfile
+from scipy.signal import resample_poly
 from kokoro_onnx import Kokoro
 
 
@@ -57,6 +60,71 @@ def load_kokoro():
         kokoro = Kokoro(model_path=str(model_path), voices_path=str(voices_path))
         return kokoro
 
+def _available_voice_ids(engine) -> set[str]:
+    """
+    Best-effort extraction of available voice IDs from kokoro-onnx.
+    The library's internal structure can vary by version.
+    """
+    for attr in ("voices", "_voices", "voice_map", "_voice_map"):
+        v = getattr(engine, attr, None)
+        if isinstance(v, dict):
+            return set(v.keys())
+        if isinstance(v, (list, tuple, set)) and all(isinstance(x, str) for x in v):
+            return set(v)
+    return set()
+
+
+def _resolve_voice_id(engine, requested: str, fallback: str) -> str:
+    requested = requested or ""
+    fallback = fallback or "af_bella"
+    voices = _available_voice_ids(engine)
+    if not voices:
+        return requested or fallback
+    if requested in voices:
+        return requested
+    if fallback in voices:
+        return fallback
+    # Prefer a female-sounding default if present.
+    for cand in ("af_bella", "af_nicole", "af_sarah", "af_sky", "hf_alpha"):
+        if cand in voices:
+            return cand
+    return next(iter(voices))
+
+
+def _to_pcm16(samples: np.ndarray) -> np.ndarray:
+    samples = np.asarray(samples)
+    if samples.dtype.kind == "f":
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        if peak > 0:
+            samples = samples * (0.98 / peak)
+        samples = np.clip(samples, -1.0, 1.0)
+        return (samples * 32767.0).astype(np.int16)
+    return samples.astype(np.int16, copy=False)
+
+
+def _encode_wav_pcm16(pcm16: np.ndarray, sample_rate: int) -> bytes:
+    buf = io.BytesIO()
+    wavfile.write(buf, sample_rate, pcm16)
+    return buf.getvalue()
+
+
+def _encode_wav_mulaw(pcm16: np.ndarray, sample_rate: int) -> bytes:
+    """
+    Telephony-friendly WAV: 8-bit μ-law at 8kHz.
+    This often sounds dramatically cleaner over PSTN than 24k PCM.
+    """
+    ulaw = audioop.lin2ulaw(pcm16.tobytes(), 2)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)  # 8-bit
+        w.setframerate(sample_rate)
+        # wave module supports non-PCM via comptype
+        w.setcomptype("ULAW", "CCITT G.711 u-law")
+        w.writeframes(ulaw)
+    return buf.getvalue()
+
+
 def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-us"):
     """
     Generates a WAV file in memory. 
@@ -66,26 +134,27 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     engine = load_kokoro()
 
     speed = float(os.getenv("KOKORO_SPEED", "1.25"))
+    target_sr = int(os.getenv("TTS_SAMPLE_RATE", "8000"))
+    encoding = os.getenv("TTS_ENCODING", "mulaw").lower().strip()  # mulaw|pcm16
+
+    # If the requested voice isn't actually in voices.bin, kokoro-onnx may fall back.
+    # Resolve deterministically to avoid accidentally getting a male/default voice.
+    fallback_voice = os.getenv("KOKORO_VOICE_ID", "af_bella")
+    voice_id = _resolve_voice_id(engine, voice_id, fallback_voice)
 
     # Kokoro processes text and returns samples + sample_rate
     samples, sample_rate = engine.create(text, voice=voice_id, speed=speed, lang=lang)
 
-    # Kokoro returns float samples; many players/streamers (including some TTS
-    # integrations) expect standard PCM16 WAV, not IEEE-float WAV.
-    samples = np.asarray(samples)
-    if samples.dtype.kind == "f":
-        # Normalize to avoid clipping/distortion (often perceived as "noise").
-        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
-        if peak > 0:
-            # Bring peak to ~0.98 to preserve headroom.
-            samples = samples * (0.98 / peak)
-        samples = np.clip(samples, -1.0, 1.0)
-        samples = (samples * 32767.0).astype(np.int16)
-    else:
-        # If it's already integer PCM, keep it as-is.
-        samples = samples.astype(np.int16, copy=False)
+    pcm16 = _to_pcm16(samples)
 
-    # Write to a buffer in WAV format (PCM16)
-    byte_io = io.BytesIO()
-    wavfile.write(byte_io, sample_rate, samples)
-    return byte_io.getvalue()
+    # Resample to telephony rate (default 8kHz) for better PSTN quality and lower bandwidth.
+    if sample_rate != target_sr:
+        # polyphase resampling; keep mono
+        pcm16_f = pcm16.astype(np.float32)
+        resampled = resample_poly(pcm16_f, target_sr, sample_rate)
+        pcm16 = np.clip(resampled, -32768, 32767).astype(np.int16)
+        sample_rate = target_sr
+
+    if encoding == "mulaw":
+        return _encode_wav_mulaw(pcm16, sample_rate)
+    return _encode_wav_pcm16(pcm16, sample_rate)
