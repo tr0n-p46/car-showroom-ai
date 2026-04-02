@@ -29,7 +29,7 @@ async def vapi_tts_handler(request: Request):
     )
 
     # Choose voice based on request or default to hf_alpha (Hindi Female).
-    voice_id = (
+    requested_voice_id = (
         (payload.get("voice") or {}).get("id")
         or payload.get("voice_id")
         or payload.get("voiceId")
@@ -37,8 +37,17 @@ async def vapi_tts_handler(request: Request):
         or "hf_alpha"
     )
 
+    # Kokoro v0.19 commonly ships with `hf_alpha` (Hindi Female) and `hm_psi` (Hindi Male).
+    # VAPI may pass ElevenLabs voice ids here; guard against unknown voice ids.
+    allowed_voice_ids = {"hf_alpha", "hm_psi"}
+    voice_id = requested_voice_id if requested_voice_id in allowed_voice_ids else "hf_alpha"
+
     try:
         audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id)
+        return Response(content=audio_content, media_type="audio/wav")
+    except Exception:
+        # Last-resort fallback to a known voice id so the call doesn't hang.
+        audio_content = tts_engine.generate_speech_wav(text, voice_id="hf_alpha")
         return Response(content=audio_content, media_type="audio/wav")
     except FileNotFoundError as e:
         # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
