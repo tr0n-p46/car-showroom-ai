@@ -150,7 +150,9 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
 
     speed = float(os.getenv("KOKORO_SPEED", "1.25"))
     target_sr = int(os.getenv("TTS_SAMPLE_RATE", "8000"))
-    encoding = os.getenv("TTS_ENCODING", "mulaw").lower().strip()  # mulaw|pcm16
+    # Default to PCM16 for broad compatibility. (Some clients mis-handle μ-law WAV
+    # and play it as PCM, which sounds like gibberish/noise.)
+    encoding = os.getenv("TTS_ENCODING", "pcm16").lower().strip()  # mulaw|pcm16
 
     # If the requested voice isn't actually in voices.bin, kokoro-onnx may fall back.
     # Resolve deterministically to avoid accidentally getting a male/default voice.
