@@ -3,4 +3,8 @@ uvicorn
 supabase
 python-dotenv
 pydantic
-
+kokoro-onnx
+onnxruntime
+numpy
+scipy
+requests
