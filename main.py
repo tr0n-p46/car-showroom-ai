@@ -10,7 +10,7 @@ import uvicorn
 
 app = FastAPI()
 
-TTS_BUILD_ID = "1b3ea82"
+TTS_BUILD_ID = "7a507f6"
 
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 
