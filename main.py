@@ -21,10 +21,16 @@ async def vapi_tts_handler(request: Request):
     
     # Choose voice based on request or default to hf_alpha (Hindi Female)
     voice_id = "hf_alpha" 
-    
-    audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id)
-    
-    return Response(content=audio_content, media_type="audio/wav")
+    try:
+        audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id)
+        return Response(content=audio_content, media_type="audio/wav")
+    except FileNotFoundError as e:
+        # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
+        return Response(
+            content=f"Model assets missing: {e}".encode("utf-8"),
+            media_type="text/plain",
+            status_code=500,
+        )
 
 @app.post("/upload")
 async def upload(file: UploadFile):
@@ -38,6 +44,7 @@ async def upload(file: UploadFile):
 
     with open(path, "wb") as f:
         f.write(await file.read())
+    tts_engine.reset_kokoro()
     return {"status": "uploaded"}
 
 @app.post("/vapi-tools")
