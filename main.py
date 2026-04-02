@@ -1,7 +1,10 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile
+from fastapi.responses import Response
+
 import tools
 import tts_engine
+import uvicorn
 
 app = FastAPI()
 
@@ -25,7 +28,14 @@ async def vapi_tts_handler(request: Request):
 
 @app.post("/upload")
 async def upload(file: UploadFile):
-    path = f"/app/models/{file.filename}"
+    # Save into the same directory TTS loads from.
+    model_dir = os.getenv("MODEL_DIR", "/models").strip()
+    os.makedirs(model_dir, exist_ok=True)
+
+    # Prevent path traversal (e.g. filename = "../../etc/passwd")
+    safe_name = os.path.basename(file.filename)
+    path = os.path.join(model_dir, safe_name)
+
     with open(path, "wb") as f:
         f.write(await file.read())
     return {"status": "uploaded"}
