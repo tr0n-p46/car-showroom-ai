@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
@@ -41,6 +42,8 @@ async def _warm_tts_engine():
     # Warm up the ONNX session so the first call isn't extremely slow.
     try:
         tts_engine.load_kokoro()
+        # Do a tiny synthesis once so the first real call is fast.
+        await asyncio.to_thread(tts_engine.generate_speech_wav, "Hello", "af_bella", "en-us")
     except Exception:
         # If assets are missing, the endpoint will report it on first use.
         pass
@@ -64,6 +67,8 @@ async def vapi_tts_handler(request: Request):
         or (message if isinstance(message, str) else None)
         or "Hello"
     )
+    if isinstance(text, str) and not text.strip():
+        text = "Hello"
 
     # Choose voice deterministically (female by default).
     default_voice_en = os.getenv("KOKORO_VOICE_ID", "af_bella")

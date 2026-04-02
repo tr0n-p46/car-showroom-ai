@@ -148,7 +148,11 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     """
     engine = load_kokoro()
 
-    speed = float(os.getenv("KOKORO_SPEED", "1.25"))
+    # Default closer to natural pacing for phone calls.
+    # You can override via `KOKORO_SPEED` (recommended range: 0.85–1.20).
+    speed = float(os.getenv("KOKORO_SPEED", "1.05"))
+    # Clamp to avoid extreme fast/slow values if misconfigured.
+    speed = max(0.7, min(1.5, speed))
     target_sr = int(os.getenv("TTS_SAMPLE_RATE", "8000"))
     # Default to PCM16 for broad compatibility. (Some clients mis-handle μ-law WAV
     # and play it as PCM, which sounds like gibberish/noise.)
