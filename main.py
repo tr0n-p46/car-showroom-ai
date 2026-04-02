@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 import tools
+import tts_engine
 
 app = FastAPI()
 
