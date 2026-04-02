@@ -80,6 +80,87 @@ async def debug_version(request: Request):
         return Response(content=b"Unauthorized", status_code=401, media_type="text/plain")
     return {"tts_build_id": TTS_BUILD_ID}
 
+@app.post("/debug/tts-decision")
+async def debug_tts_decision(request: Request):
+    """
+    Return the server's TTS decision (voice/lang) for a payload, without audio.
+    Protected by DEBUG_KEY.
+    """
+    debug_key = os.getenv("DEBUG_KEY")
+    provided = request.headers.get("x-debug-key") or request.query_params.get("key")
+    if not debug_key or provided != debug_key:
+        return Response(content=b"Unauthorized", status_code=401, media_type="text/plain")
+
+    payload = await request.json()
+    message = payload.get("message") or {}
+    text = (
+        (message.get("transcript") if isinstance(message, dict) else None)
+        or (message.get("text") if isinstance(message, dict) else None)
+        or payload.get("transcript")
+        or payload.get("text")
+        or (message if isinstance(message, str) else None)
+        or "Hello"
+    )
+    if isinstance(text, str) and not text.strip():
+        text = "Hello"
+
+    default_voice_en = os.getenv("KOKORO_VOICE_ID", "af_bella")
+    default_voice_hi = os.getenv("KOKORO_VOICE_ID_HI", "hf_alpha")
+    requested_voice_id = (
+        (payload.get("voice") or {}).get("id")
+        or payload.get("voice_id")
+        or payload.get("voiceId")
+        or (message.get("voice") if isinstance(message, dict) else None)
+        or default_voice_en
+    )
+
+    lang_en = os.getenv("KOKORO_LANG", "en-us")
+    lang_hi = os.getenv("KOKORO_LANG_HI", "h")
+    payload_lang = (
+        payload.get("language")
+        or payload.get("lang")
+        or (message.get("language") if isinstance(message, dict) else None)
+        or (message.get("lang") if isinstance(message, dict) else None)
+    )
+    is_hi = (
+        (isinstance(payload_lang, str) and payload_lang.lower().startswith("hi"))
+        or _is_probably_hindi(text)
+        or _is_probably_hindi_latin(text)
+    )
+    lang = lang_hi if is_hi else lang_en
+
+    default_voice = default_voice_hi if is_hi else default_voice_en
+    allowed = _parse_allowed_voices(os.getenv("KOKORO_ALLOWED_VOICES"))
+    if not allowed:
+        allowed = {"af_bella", "af_nicole", "af_sarah", "af_sky", "af_heart", "hf_alpha", "hf_beta"}
+
+    if (
+        _looks_like_kokoro_voice_id(requested_voice_id)
+        and requested_voice_id in allowed
+        and not _is_male_kokoro_voice_id(requested_voice_id)
+    ):
+        voice_id = requested_voice_id
+    else:
+        voice_id = default_voice if default_voice in allowed else sorted(allowed)[0]
+
+    return {
+        "tts_build_id": TTS_BUILD_ID,
+        "text_preview": text[:200],
+        "payload_lang": payload_lang,
+        "is_hi": is_hi,
+        "lang": lang,
+        "requested_voice_id": requested_voice_id,
+        "voice_id": voice_id,
+        "default_voice_en": default_voice_en,
+        "default_voice_hi": default_voice_hi,
+        "allowed_voices": sorted(allowed),
+        "env": {
+            "KOKORO_SPEED": os.getenv("KOKORO_SPEED"),
+            "TTS_SAMPLE_RATE": os.getenv("TTS_SAMPLE_RATE"),
+            "TTS_ENCODING": os.getenv("TTS_ENCODING"),
+        },
+    }
+
 # Vapi Custom Voice Provider Endpoint
 @app.post("/vapi-tts")
 async def vapi_tts_handler(request: Request):
@@ -160,6 +241,7 @@ async def vapi_tts_handler(request: Request):
         resp.headers["x-tts-speed"] = os.getenv("KOKORO_SPEED", "")
         resp.headers["x-tts-sample-rate"] = os.getenv("TTS_SAMPLE_RATE", "")
         resp.headers["x-tts-encoding"] = os.getenv("TTS_ENCODING", "")
+        print(f"TTS decision build={TTS_BUILD_ID} voice={voice_id} lang={lang} len={len(text)}")
         return resp
     except FileNotFoundError as e:
         # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
