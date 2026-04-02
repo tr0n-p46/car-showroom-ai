@@ -1,14 +1,19 @@
+import os
 from fastapi import FastAPI, Request
 import tools
 
 app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"status": "Automotive AI Receptionist is Online"}
 
 @app.post("/vapi-tools")
 async def vapi_tool_handler(request: Request):
     payload = await request.json()
     message = payload.get("message")
     
-    # Check which tool the AI wants to call
+    # Extract tool call details
     tool_call = message.get("toolCalls")[0]
     function_name = tool_call.get("function").get("name")
     args = tool_call.get("function").get("arguments")
@@ -26,9 +31,8 @@ async def vapi_tool_handler(request: Request):
             summary=args.get("summary")
         )
     else:
-        result = "Tool not found"
+        result = "Error: Function not implemented."
 
-    # Return result back to Vapi to be spoken by AI
     return {
         "results": [{
             "toolCallId": tool_call.get("id"),
