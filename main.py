@@ -288,11 +288,28 @@ async def vapi_tool_handler(request: Request):
         args = {}
 
     if function_name == "search_cars":
-        result = tools.search_cars(
-            budget=args.get("budget"),
-            model=args.get("model"),
-            fuel_type=args.get("fuel_type"),
-        )
+        # Pass through supported filters (ignore unknown keys safely).
+        allowed_keys = {
+            "budget",
+            "model",
+            "fuel_type",
+            "make",
+            "brand",
+            "q",
+            "price_min",
+            "price_max",
+            "kms_min",
+            "kms_max",
+            "transmission",
+            "owners",
+            "owners_min",
+            "owners_max",
+            "reg_prefix",
+            "status",
+            "limit",
+        }
+        filtered = {k: v for k, v in (args or {}).items() if k in allowed_keys}
+        result = tools.search_cars(**filtered)
     elif function_name == "create_lead":
         result = tools.create_lead(
             phone=args.get("phone"),
