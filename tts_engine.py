@@ -153,7 +153,10 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     speed = float(os.getenv("KOKORO_SPEED", "1.0"))
     speed = max(0.5, min(2.0, speed))
 
-    target_sr = int(os.getenv("TTS_SAMPLE_RATE", "8000"))
+    # VAPI typically expects 24kHz PCM WAV for custom TTS; returning 8kHz can be
+    # interpreted as 24kHz on the client side and sound like fast "gibberish".
+    # Keep 24kHz by default; only downsample if you explicitly set it.
+    target_sr = int(os.getenv("TTS_SAMPLE_RATE", "24000"))
     # Default to PCM16 for broad compatibility. (Some clients mis-handle μ-law WAV
     # and play it as PCM, which sounds like gibberish/noise.)
     encoding = os.getenv("TTS_ENCODING", "pcm16").lower().strip()  # mulaw|pcm16
@@ -182,8 +185,8 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
             silence_samples = int(sample_rate * (total_pause_ms / 1000.0))
             pcm16 = np.concatenate([pcm16, np.zeros(silence_samples, dtype=np.int16)])
 
-    # Resample to telephony rate (default 8kHz) for better PSTN quality and lower bandwidth.
-    if sample_rate != target_sr:
+    # Resample only if needed.
+    if target_sr > 0 and sample_rate != target_sr:
         # polyphase resampling; keep mono
         pcm16_f = pcm16.astype(np.float32)
         resampled = resample_poly(pcm16_f, target_sr, sample_rate)
