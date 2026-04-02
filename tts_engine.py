@@ -75,7 +75,46 @@ def _available_voice_ids(engine) -> set[str]:
 
 def list_voice_ids() -> list[str]:
     engine = load_kokoro()
-    return sorted(_available_voice_ids(engine))
+    # Some kokoro-onnx builds don't expose a voice map publicly.
+    # Fall back to probing common voice IDs.
+    voices = _available_voice_ids(engine)
+    if voices:
+        return sorted(voices)
+
+    candidates_env = os.getenv("KOKORO_VOICE_CANDIDATES")
+    if candidates_env:
+        candidates = [v.strip() for v in candidates_env.split(",") if v.strip()]
+    else:
+        # Common Kokoro voice IDs seen in the ecosystem (v1.x) + Hindi voices (v0.19).
+        candidates = [
+            "af_bella",
+            "af_nicole",
+            "af_sarah",
+            "af_sky",
+            "af_heart",
+            "bf_emma",
+            "bf_isabella",
+            "am_adam",
+            "am_michael",
+            "bm_george",
+            "bm_lewis",
+            "hf_alpha",
+            "hf_beta",
+            "hm_psi",
+            "hm_omega",
+        ]
+
+    working: list[str] = []
+    test_text = "hi"
+    # Keep the probe lightweight: English lang, speed 1.0.
+    for vid in candidates:
+        try:
+            engine.create(test_text, voice=vid, speed=1.0, lang="en-us")
+            working.append(vid)
+        except Exception:
+            continue
+
+    return sorted(set(working))
 
 
 def _is_male_voice_id(v: str) -> bool:
