@@ -2,8 +2,8 @@ import io
 import os
 from pathlib import Path
 import threading
-import wave
 import audioop
+import struct
 
 import numpy as np
 import scipy.io.wavfile as wavfile
@@ -114,15 +114,30 @@ def _encode_wav_mulaw(pcm16: np.ndarray, sample_rate: int) -> bytes:
     This often sounds dramatically cleaner over PSTN than 24k PCM.
     """
     ulaw = audioop.lin2ulaw(pcm16.tobytes(), 2)
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(1)  # 8-bit
-        w.setframerate(sample_rate)
-        # wave module supports non-PCM via comptype
-        w.setcomptype("ULAW", "CCITT G.711 u-law")
-        w.writeframes(ulaw)
-    return buf.getvalue()
+    # Manually build a RIFF/WAVE file with WAVE_FORMAT_MULAW (0x0007).
+    # The standard library `wave` module can't reliably write non-PCM WAVs.
+    num_channels = 1
+    bits_per_sample = 8
+    audio_format = 7  # WAVE_FORMAT_MULAW
+    block_align = num_channels * (bits_per_sample // 8)  # 1
+    byte_rate = sample_rate * block_align  # 8000
+    data = ulaw
+
+    fmt_chunk = struct.pack(
+        "<4sIHHIIHH",
+        b"fmt ",
+        16,  # PCM-style fmt chunk size
+        audio_format,
+        num_channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+    )
+    data_chunk = struct.pack("<4sI", b"data", len(data)) + data
+    riff_size = 4 + len(fmt_chunk) + len(data_chunk)
+    header = struct.pack("<4sI4s", b"RIFF", riff_size, b"WAVE")
+    return header + fmt_chunk + data_chunk
 
 
 def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-us"):
