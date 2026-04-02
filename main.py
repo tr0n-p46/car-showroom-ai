@@ -1,4 +1,5 @@
 import os
+import re
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
@@ -7,6 +8,23 @@ import tts_engine
 import uvicorn
 
 app = FastAPI()
+
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
+
+def _is_probably_hindi(text: str) -> bool:
+    return bool(_DEVANAGARI_RE.search(text))
+
+
+def _looks_like_kokoro_voice_id(v: str) -> bool:
+    # Kokoro voice ids are typically like "af_bella", "hf_alpha", etc.
+    return isinstance(v, str) and "_" in v and "-" not in v and len(v) <= 40
+
+
+def _is_male_kokoro_voice_id(v: str) -> bool:
+    # Common male prefixes: am_ (American male), bm_ (British male), hm_ (Hindi male), jm_, pm_, em_, im_
+    return isinstance(v, str) and v.startswith(("am_", "bm_", "hm_", "jm_", "pm_", "em_", "im_"))
+
 
 @app.on_event("startup")
 async def _warm_tts_engine():
@@ -47,16 +65,19 @@ async def vapi_tts_handler(request: Request):
         or default_voice
     )
 
-    # VAPI may pass ElevenLabs voice ids here; if Kokoro doesn't recognize it,
-    # we'll fall back inside the exception handler below.
-    voice_id = requested_voice_id
+    # VAPI may pass ElevenLabs voice ids here; only accept ids that look like Kokoro voice ids.
+    voice_id = requested_voice_id if _looks_like_kokoro_voice_id(requested_voice_id) else default_voice
+    # Force female voice unless caller explicitly requests a non-male Kokoro voice id.
+    if _is_male_kokoro_voice_id(voice_id):
+        voice_id = default_voice
+
+    # Language: default English, but auto-detect Hindi script.
+    lang = os.getenv("KOKORO_LANG", "en-us")
+    if _is_probably_hindi(text):
+        lang = os.getenv("KOKORO_LANG_HI", "hi")
 
     try:
-        audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id)
-        return Response(content=audio_content, media_type="audio/wav")
-    except Exception:
-        # Last-resort fallback to a known voice id so the call doesn't hang.
-        audio_content = tts_engine.generate_speech_wav(text, voice_id=default_voice)
+        audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id, lang=lang)
         return Response(content=audio_content, media_type="audio/wav")
     except FileNotFoundError as e:
         # Provide a helpful message if model assets haven't been uploaded to `/models` yet.
@@ -65,6 +86,11 @@ async def vapi_tts_handler(request: Request):
             media_type="text/plain",
             status_code=500,
         )
+    except Exception:
+        # Last-resort fallback to a known voice id/lang so the call doesn't hang.
+        fallback_lang = os.getenv("KOKORO_LANG", "en-us")
+        audio_content = tts_engine.generate_speech_wav(text, voice_id=default_voice, lang=fallback_lang)
+        return Response(content=audio_content, media_type="audio/wav")
 
 @app.post("/vapi-tools")
 async def vapi_tool_handler(request: Request):
