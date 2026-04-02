@@ -4,7 +4,10 @@ import scipy.io.wavfile as wavfile
 import numpy as np
 
 # Initialize model (this happens once on startup)
-kokoro = Kokoro("kokoro-v0_19.onnx", "voices.bin")
+kokoro = Kokoro(
+    model_path="/models/kokoro-v0_19.onnx",
+    voices_path="/models/voices.bin"
+)
 
 def generate_speech_wav(text: str, voice_id: str = "hf_alpha"):
     """

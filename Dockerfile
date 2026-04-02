@@ -12,7 +12,5 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-# This will now download the REAL 300MB files
-RUN python download_models.py
 
 CMD uvicorn main:app --host 0.0.0.0 --port 8080
