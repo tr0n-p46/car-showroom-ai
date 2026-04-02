@@ -149,10 +149,9 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     engine = load_kokoro()
 
     # You can override via `KOKORO_SPEED`.
-    # NOTE: we allow very low values because users may want *very* slow speech.
+    # kokoro-onnx enforces: 0.5 <= speed <= 2.0
     speed = float(os.getenv("KOKORO_SPEED", "1.0"))
-    # Clamp only to avoid nonsense values / crashes.
-    speed = max(0.05, min(3.0, speed))
+    speed = max(0.5, min(2.0, speed))
 
     target_sr = int(os.getenv("TTS_SAMPLE_RATE", "8000"))
     # Default to PCM16 for broad compatibility. (Some clients mis-handle μ-law WAV
@@ -168,6 +167,20 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha", lang: str = "en-u
     samples, sample_rate = engine.create(text, voice=voice_id, speed=speed, lang=lang)
 
     pcm16 = _to_pcm16(samples)
+
+    # Optional extra pauses (helps perceived speaking rate on phone calls).
+    # Values are milliseconds.
+    pause_sentence_ms = int(os.getenv("TTS_PAUSE_SENTENCE_MS", "0"))
+    pause_comma_ms = int(os.getenv("TTS_PAUSE_COMMA_MS", "0"))
+    if pause_sentence_ms > 0 or pause_comma_ms > 0:
+        # Create a rough pause map based on punctuation.
+        # This is intentionally simple: add silence proportional to punctuation counts.
+        sentence_marks = sum(text.count(x) for x in (".", "!", "?", "\n"))
+        comma_marks = text.count(",") + text.count(";") + text.count(":")
+        total_pause_ms = sentence_marks * pause_sentence_ms + comma_marks * pause_comma_ms
+        if total_pause_ms > 0:
+            silence_samples = int(sample_rate * (total_pause_ms / 1000.0))
+            pcm16 = np.concatenate([pcm16, np.zeros(silence_samples, dtype=np.int16)])
 
     # Resample to telephony rate (default 8kHz) for better PSTN quality and lower bandwidth.
     if sample_rate != target_sr:
