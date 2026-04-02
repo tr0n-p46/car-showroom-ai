@@ -52,6 +52,19 @@ async def _warm_tts_engine():
 async def root():
     return {"status": "Automotive AI Receptionist is Online"}
 
+@app.get("/debug/voices")
+async def debug_voices(request: Request):
+    """
+    Returns available Kokoro voice IDs.
+    Protected by DEBUG_KEY env var to avoid exposing internals publicly.
+    """
+    debug_key = os.getenv("DEBUG_KEY")
+    provided = request.headers.get("x-debug-key") or request.query_params.get("key")
+    if not debug_key or provided != debug_key:
+        return Response(content=b"Unauthorized", status_code=401, media_type="text/plain")
+    voices = tts_engine.list_voice_ids()
+    return {"count": len(voices), "voices": voices}
+
 # Vapi Custom Voice Provider Endpoint
 @app.post("/vapi-tts")
 async def vapi_tts_handler(request: Request):

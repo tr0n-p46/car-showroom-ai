@@ -73,6 +73,10 @@ def _available_voice_ids(engine) -> set[str]:
             return set(v)
     return set()
 
+def list_voice_ids() -> list[str]:
+    engine = load_kokoro()
+    return sorted(_available_voice_ids(engine))
+
 
 def _is_male_voice_id(v: str) -> bool:
     return isinstance(v, str) and v.startswith(("am_", "bm_", "hm_", "jm_", "pm_", "em_", "im_"))
