@@ -67,8 +67,19 @@ def generate_speech_wav(text: str, voice_id: str = "hf_alpha"):
 
     # Kokoro processes text and returns samples + sample_rate
     samples, sample_rate = engine.create(text, voice=voice_id, speed=1.1, lang="en-us")
-    
-    # Write to a buffer in WAV format
+
+    # Kokoro returns float samples; many players/streamers (including some TTS
+    # integrations) expect standard PCM16 WAV, not IEEE-float WAV.
+    samples = np.asarray(samples)
+    if samples.dtype.kind == "f":
+        # Kokoro floats are typically in [-1, 1]; clamp to be safe.
+        samples = np.clip(samples, -1.0, 1.0)
+        samples = (samples * 32767.0).astype(np.int16)
+    else:
+        # If it's already integer PCM, keep it as-is.
+        samples = samples.astype(np.int16, copy=False)
+
+    # Write to a buffer in WAV format (PCM16)
     byte_io = io.BytesIO()
     wavfile.write(byte_io, sample_rate, samples)
     return byte_io.getvalue()

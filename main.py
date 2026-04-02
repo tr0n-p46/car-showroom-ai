@@ -16,11 +16,27 @@ async def root():
 @app.post("/vapi-tts")
 async def vapi_tts_handler(request: Request):
     payload = await request.json()
-    # Vapi sends text in message -> transcript
-    text = payload.get("message", {}).get("transcript", "Hello")
-    
-    # Choose voice based on request or default to hf_alpha (Hindi Female)
-    voice_id = "hf_alpha" 
+
+    # VAPI payload shape can vary; try common locations.
+    message = payload.get("message") or {}
+    text = (
+        (message.get("transcript") if isinstance(message, dict) else None)
+        or (message.get("text") if isinstance(message, dict) else None)
+        or payload.get("transcript")
+        or payload.get("text")
+        or (message if isinstance(message, str) else None)
+        or "Hello"
+    )
+
+    # Choose voice based on request or default to hf_alpha (Hindi Female).
+    voice_id = (
+        (payload.get("voice") or {}).get("id")
+        or payload.get("voice_id")
+        or payload.get("voiceId")
+        or (message.get("voice") if isinstance(message, dict) else None)
+        or "hf_alpha"
+    )
+
     try:
         audio_content = tts_engine.generate_speech_wav(text, voice_id=voice_id)
         return Response(content=audio_content, media_type="audio/wav")
