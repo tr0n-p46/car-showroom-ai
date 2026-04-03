@@ -102,7 +102,7 @@ def search_cars(
     status: str | None = "available",
     limit: int | None = 10,
 ):
-    _VOICE_COLUMNS = "id,make,model,year,price,kms_driven,fuel_type,transmission,owners,status,car_number"
+    _VOICE_COLUMNS = "id,make,model,year,price,kms_driven,fuel_type,transmission,owners,status"
     query = supabase.table("inventory").select(_VOICE_COLUMNS)
 
     if status:
