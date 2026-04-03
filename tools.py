@@ -102,7 +102,8 @@ def search_cars(
     status: str | None = "available",
     limit: int | None = 10,
 ):
-    query = supabase.table("inventory").select("*")
+    _VOICE_COLUMNS = "id,make,model,year,price,kms_driven,fuel_type,transmission,owners,status,car_number"
+    query = supabase.table("inventory").select(_VOICE_COLUMNS)
 
     if status:
         query = query.eq("status", str(status).strip().lower())
@@ -222,6 +223,14 @@ def send_car_details_whatsapp(
 
     if isinstance(cars, str):
         return f"No matching cars found to send. {cars}"
+
+    # Re-fetch matched car IDs with image_url for WhatsApp media
+    car_ids = [c["id"] for c in cars if c.get("id")]
+    if car_ids:
+        img_rows = supabase.table("inventory").select("id,image_url").in_("id", car_ids).execute().data or []
+        img_map = {r["id"]: r.get("image_url") for r in img_rows}
+        for c in cars:
+            c["image_url"] = img_map.get(c.get("id"))
 
     import os
     dealer_name = os.getenv("DEALER_NAME", "")
