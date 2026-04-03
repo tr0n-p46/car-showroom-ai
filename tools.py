@@ -239,7 +239,10 @@ def send_car_details_whatsapp(
     if result.get("ok"):
         count = min(len(cars), 5)
         return f"Sent {count} car option(s) to WhatsApp number {phone}. Tell the customer to check their WhatsApp."
-    return f"Could not send WhatsApp message: {result.get('error', 'unknown error')}. Apologize and offer to share details verbally instead."
+    err = result.get("error", "unknown error")
+    if "parse phone" in err.lower():
+        return f"Phone number '{phone}' seems incomplete or incorrect. Ask the customer to repeat their full 10-digit mobile number clearly."
+    return f"Could not send WhatsApp message: {err}. Apologize and offer to share details verbally instead."
 
 
 def book_test_drive(

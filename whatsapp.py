@@ -55,9 +55,11 @@ def normalize_phone(raw: str) -> str | None:
         digits = "91" + digits[1:]
     elif len(digits) == 12 and digits.startswith("91"):
         pass
-    # 11-digit US (1XXXXXXXXXX without +)
     elif len(digits) == 11 and digits.startswith("1"):
         pass
+    elif len(digits) < 10:
+        print(f"WA PHONE REJECT: only {len(digits)} digits in '{raw}' — likely transcription error", flush=True)
+        return None
 
     return f"whatsapp:+{digits}"
 
