@@ -177,27 +177,41 @@ def _extract_urls(raw) -> list[str]:
 
 def send_car_details(to_phone: str, cars: list[dict], dealer_name: str = "") -> dict:
     """
-    Format a list of inventory dicts into a WhatsApp message and send.
-    If any car has a photo URL, sends as media message.
+    Send one WhatsApp message per car: text card + first photo,
+    then up to 2 more photo-only messages per car.
+    Twilio WhatsApp only renders 1 media per message.
     """
     if not cars:
         return {"ok": False, "error": "No cars to send"}
 
-    header = f"Here are the cars from {dealer_name}:" if dealer_name else "Here are the cars we discussed:"
-    cards = [_format_car_card(c) for c in cars[:5]]
-    body = header + "\n\n" + "\n\n".join(cards)
-    if dealer_name:
-        body += f"\n\nVisit us at {dealer_name}!"
+    last_result = {"ok": False, "error": "No messages sent"}
+    sent_count = 0
 
-    photo_urls = []
-    for c in cars[:5]:
-        raw = c.get("image_url") or c.get("photo_url") or c.get("photos")
-        urls = _extract_urls(raw)
-        photo_urls.extend(urls)
+    for car in cars[:3]:
+        card_text = _format_car_card(car)
+        if dealer_name:
+            card_text += f"\n\n📍 {dealer_name}"
 
-    if photo_urls:
-        return send_media(to_phone, body, photo_urls[:10])
-    return send_text(to_phone, body)
+        raw = car.get("image_url") or car.get("photo_url") or car.get("photos")
+        photo_urls = _extract_urls(raw)[:3]
+
+        if photo_urls:
+            last_result = send_media(to_phone, card_text, [photo_urls[0]])
+            if not last_result.get("ok"):
+                return last_result
+            sent_count += 1
+            for extra_url in photo_urls[1:]:
+                extra_result = send_media(to_phone, "", [extra_url])
+                if extra_result.get("ok"):
+                    sent_count += 1
+        else:
+            last_result = send_text(to_phone, card_text)
+            if not last_result.get("ok"):
+                return last_result
+            sent_count += 1
+
+    last_result["messages_sent"] = sent_count
+    return last_result
 
 
 def send_test_drive_confirmation(

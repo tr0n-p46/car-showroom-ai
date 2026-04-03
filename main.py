@@ -273,6 +273,9 @@ _SEARCH_ALIASES = {
     "kms": "kms_max",
     "max_kms": "kms_max",
     "owner": "owners",
+    "car_year": "year",
+    "min_year": "year_min",
+    "max_year": "year_max",
 }
 
 
@@ -314,10 +317,15 @@ def _execute_tool(function_name: str, args: dict):
         wa_keys = {
             "phone", "budget", "model", "fuel_type", "make",
             "brand", "q", "price_min", "price_max",
-            "transmission", "limit",
+            "transmission", "year", "year_min", "year_max",
+            "owners", "limit",
         }
-        filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
-        return tools.send_car_details_whatsapp(**filtered)
+        normalized = {}
+        for k, v in (args or {}).items():
+            key = _SEARCH_ALIASES.get(k, k)
+            if key in wa_keys and v not in (None, "", "today", "tomorrow"):
+                normalized[key] = v
+        return tools.send_car_details_whatsapp(**normalized)
 
     if function_name == "book_test_drive":
         td_keys = {

@@ -197,6 +197,10 @@ def send_car_details_whatsapp(
     price_min=None,
     price_max=None,
     transmission: str | None = None,
+    year=None,
+    year_min=None,
+    year_max=None,
+    owners=None,
     limit: int | None = 5,
 ):
     """
@@ -208,6 +212,10 @@ def send_car_details_whatsapp(
     if not phone:
         return "Cannot send WhatsApp: no phone number provided. Ask the customer for their WhatsApp number."
 
+    year_i = _parse_int(year)
+    year_min_i = _parse_int(year_min)
+    year_max_i = _parse_int(year_max)
+
     cars = search_cars(
         budget=budget,
         model=model,
@@ -218,8 +226,25 @@ def send_car_details_whatsapp(
         price_min=price_min,
         price_max=price_max,
         transmission=transmission,
+        owners=owners,
         limit=limit,
     )
+
+    if isinstance(cars, list) and (year_i or year_min_i or year_max_i):
+        filtered = []
+        for c in cars:
+            cy = c.get("year")
+            if cy is None:
+                continue
+            if year_i and cy != year_i:
+                continue
+            if year_min_i and cy < year_min_i:
+                continue
+            if year_max_i and cy > year_max_i:
+                continue
+            filtered.append(c)
+        if filtered:
+            cars = filtered
 
     if isinstance(cars, str):
         return f"No matching cars found to send. {cars}"
