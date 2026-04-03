@@ -85,16 +85,16 @@ def cmd_folders(args):
         sys.exit(1)
 
     total_uploaded = 0
+    skipped = 0
     for sub in subdirs:
-        try:
-            row_id = int(sub.name.strip())
-        except ValueError:
-            print(f"  ✗ Skipping '{sub.name}/' — folder name must be the inventory row ID")
+        row_id = sub.name.strip()
+        if not row_id:
             continue
 
         images = sorted(f for f in sub.iterdir() if f.suffix.lower() in IMAGE_EXTS)
         if not images:
             print(f"  ✗ No images in {sub.name}/")
+            skipped += 1
             continue
 
         images = images[:MAX_IMAGES_PER_CAR]
@@ -108,7 +108,7 @@ def cmd_folders(args):
         update_inventory_images(row_id, urls)
         total_uploaded += len(urls)
 
-    print(f"\nDone. Uploaded {total_uploaded} image(s) across {len(subdirs)} car(s).")
+    print(f"\nDone. Uploaded {total_uploaded} image(s) across {len(subdirs) - skipped} car(s).")
 
 
 def cmd_single(args):
@@ -130,10 +130,10 @@ def cmd_list_missing(_args):
         print("All inventory rows have an image_url.")
         return
     print(f"{len(missing)} row(s) missing image_url:\n")
-    print(f"  {'ID':<6} {'Year':<6} {'Make':<15} {'Model':<20}")
-    print(f"  {'—'*6} {'—'*6} {'—'*15} {'—'*20}")
+    print(f"  {'ID':<38} {'Year':<6} {'Make':<15} {'Model':<25}")
+    print(f"  {'—'*38} {'—'*6} {'—'*15} {'—'*25}")
     for r in missing:
-        print(f"  {str(r.get('id','')):<6} {str(r.get('year','')):<6} {str(r.get('make','')):<15} {str(r.get('model','')):<20}")
+        print(f"  {str(r.get('id','')):<38} {str(r.get('year','')):<6} {str(r.get('make','')):<15} {str(r.get('model','')):<25}")
 
 
 if __name__ == "__main__":
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     s1.add_argument("--dir", required=True, help="Parent directory containing row ID folders")
 
     s2 = sub.add_parser("single", help="Upload one image for a specific inventory ID")
-    s2.add_argument("--id", required=True, type=int, help="Inventory row ID")
+    s2.add_argument("--id", required=True, help="Inventory row ID (integer or UUID)")
     s2.add_argument("--file", required=True, help="Path to image file")
 
     sub.add_parser("list-missing", help="List inventory rows without images")
