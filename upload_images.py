@@ -5,20 +5,28 @@ Prerequisites:
   1. Create a bucket called 'car-images' in Supabase Dashboard → Storage
   2. Set the bucket to PUBLIC (so URLs work without auth)
 
+Image folder structure (each subfolder = inventory row ID):
+  photos/
+    42/
+      front.jpg
+      side.jpg
+      interior.jpg
+    15/
+      img1.jpg
+      img2.png
+
 Usage:
-  # Upload a single image and link to an inventory row by ID:
-  python upload_images.py --id 42 --file photos/bmw-3-series.jpg
+  # Upload all car folders (max 3 images per car):
+  python upload_images.py folders --dir photos/
 
-  # Bulk upload: a folder of images named <inventory_id>.jpg (or .png/.webp):
-  python upload_images.py --dir photos/
-
-  # Bulk upload: match by make_model (filename = "BMW_3 Series.jpg"):
-  python upload_images.py --dir photos/ --match-by make_model
+  # Upload a single image for a specific inventory ID:
+  python upload_images.py single --id 42 --file photos/bmw.jpg
 
   # List inventory rows without images:
-  python upload_images.py --list-missing
+  python upload_images.py list-missing
 """
 import argparse
+import json
 import os
 import sys
 import mimetypes
@@ -28,6 +36,8 @@ from database import supabase
 
 BUCKET = os.getenv("SUPABASE_IMAGE_BUCKET", "car-images")
 SUPABASE_URL = supabase.supabase_url
+MAX_IMAGES_PER_CAR = 3
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def get_public_url(file_path_in_bucket: str) -> str:
@@ -35,7 +45,6 @@ def get_public_url(file_path_in_bucket: str) -> str:
 
 
 def upload_file(local_path: Path, remote_name: str) -> str:
-    """Upload a file to Supabase Storage. Returns the public URL."""
     content_type = mimetypes.guess_type(str(local_path))[0] or "image/jpeg"
     with open(local_path, "rb") as f:
         data = f.read()
@@ -53,9 +62,53 @@ def upload_file(local_path: Path, remote_name: str) -> str:
     return get_public_url(remote_name)
 
 
-def update_inventory_image(row_id, image_url: str):
-    supabase.table("inventory").update({"image_url": image_url}).eq("id", row_id).execute()
-    print(f"  ✓ inventory id={row_id} → {image_url}")
+def update_inventory_images(row_id, image_urls: list[str]):
+    """Store image URLs as a JSON array string in the image_url column."""
+    value = json.dumps(image_urls)
+    supabase.table("inventory").update({"image_url": value}).eq("id", row_id).execute()
+    print(f"  ✓ inventory id={row_id} → {len(image_urls)} image(s)")
+
+
+def cmd_folders(args):
+    """Upload from folder-per-car structure: <dir>/<row_id>/img1.jpg ..."""
+    root = Path(args.dir)
+    if not root.is_dir():
+        print(f"Not a directory: {root}")
+        sys.exit(1)
+
+    subdirs = sorted(
+        [d for d in root.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+    )
+    if not subdirs:
+        print(f"No subdirectories found in {root}. Expected folders named by inventory row ID.")
+        sys.exit(1)
+
+    total_uploaded = 0
+    for sub in subdirs:
+        try:
+            row_id = int(sub.name.strip())
+        except ValueError:
+            print(f"  ✗ Skipping '{sub.name}/' — folder name must be the inventory row ID")
+            continue
+
+        images = sorted(f for f in sub.iterdir() if f.suffix.lower() in IMAGE_EXTS)
+        if not images:
+            print(f"  ✗ No images in {sub.name}/")
+            continue
+
+        images = images[:MAX_IMAGES_PER_CAR]
+        urls = []
+        for i, img in enumerate(images):
+            remote_name = f"{row_id}/{i}{img.suffix.lower()}"
+            print(f"  Uploading {sub.name}/{img.name} → {remote_name}")
+            url = upload_file(img, remote_name)
+            urls.append(url)
+
+        update_inventory_images(row_id, urls)
+        total_uploaded += len(urls)
+
+    print(f"\nDone. Uploaded {total_uploaded} image(s) across {len(subdirs)} car(s).")
 
 
 def cmd_single(args):
@@ -63,64 +116,10 @@ def cmd_single(args):
     if not path.exists():
         print(f"File not found: {path}")
         sys.exit(1)
-    ext = path.suffix.lower()
-    remote_name = f"{args.id}{ext}"
+    remote_name = f"{args.id}/0{path.suffix.lower()}"
     print(f"Uploading {path} as {remote_name} ...")
     url = upload_file(path, remote_name)
-    update_inventory_image(args.id, url)
-    print("Done.")
-
-
-def cmd_dir(args):
-    folder = Path(args.dir)
-    if not folder.is_dir():
-        print(f"Not a directory: {folder}")
-        sys.exit(1)
-
-    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-    files = sorted(f for f in folder.iterdir() if f.suffix.lower() in image_exts)
-    if not files:
-        print(f"No image files found in {folder}")
-        sys.exit(1)
-
-    print(f"Found {len(files)} image(s) in {folder}/")
-
-    if args.match_by == "make_model":
-        rows = supabase.table("inventory").select("id, make, model").execute().data or []
-        lookup = {}
-        for r in rows:
-            key = f"{r.get('make', '')}_{r.get('model', '')}".strip().lower()
-            lookup[key] = r["id"]
-
-        for f in files:
-            stem = f.stem.strip().lower()
-            row_id = lookup.get(stem)
-            if row_id is None:
-                stem_alt = stem.replace("-", " ").replace("_", " ")
-                for k, v in lookup.items():
-                    if k.replace("_", " ") == stem_alt:
-                        row_id = v
-                        break
-            if row_id is None:
-                print(f"  ✗ No inventory match for '{f.name}' (tried key '{stem}')")
-                continue
-            remote_name = f"{row_id}{f.suffix.lower()}"
-            print(f"  Uploading {f.name} → {remote_name} ...")
-            url = upload_file(f, remote_name)
-            update_inventory_image(row_id, url)
-    else:
-        for f in files:
-            stem = f.stem.strip()
-            try:
-                row_id = int(stem)
-            except ValueError:
-                print(f"  ✗ Skipping '{f.name}' — filename must be the inventory row ID (e.g. 42.jpg)")
-                continue
-            remote_name = f"{row_id}{f.suffix.lower()}"
-            print(f"  Uploading {f.name} → {remote_name} ...")
-            url = upload_file(f, remote_name)
-            update_inventory_image(row_id, url)
-
+    update_inventory_images(args.id, [url])
     print("Done.")
 
 
@@ -141,22 +140,20 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Upload car images to Supabase Storage")
     sub = p.add_subparsers(dest="cmd")
 
-    s1 = sub.add_parser("single", help="Upload one image for a specific inventory ID")
-    s1.add_argument("--id", required=True, type=int, help="Inventory row ID")
-    s1.add_argument("--file", required=True, help="Path to image file")
+    s1 = sub.add_parser("folders", help="Upload from folder-per-car structure (<dir>/<row_id>/images...)")
+    s1.add_argument("--dir", required=True, help="Parent directory containing row ID folders")
 
-    s2 = sub.add_parser("bulk", help="Bulk upload a directory of images")
-    s2.add_argument("--dir", required=True, help="Directory containing images")
-    s2.add_argument("--match-by", choices=["id", "make_model"], default="id",
-                    help="How to match filenames to inventory rows (default: filename = row ID)")
+    s2 = sub.add_parser("single", help="Upload one image for a specific inventory ID")
+    s2.add_argument("--id", required=True, type=int, help="Inventory row ID")
+    s2.add_argument("--file", required=True, help="Path to image file")
 
     sub.add_parser("list-missing", help="List inventory rows without images")
 
     args = p.parse_args()
-    if args.cmd == "single":
+    if args.cmd == "folders":
+        cmd_folders(args)
+    elif args.cmd == "single":
         cmd_single(args)
-    elif args.cmd == "bulk":
-        cmd_dir(args)
     elif args.cmd == "list-missing":
         cmd_list_missing(args)
     else:

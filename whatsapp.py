@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from twilio.rest import Client
@@ -141,6 +142,25 @@ def send_media(to_phone: str, body: str, media_urls: list[str]) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _extract_urls(raw) -> list[str]:
+    """Parse image URLs from various formats: JSON array string, plain URL, or list."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [u for u in raw if isinstance(u, str) and u.startswith("http")]
+    if isinstance(raw, str):
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [u for u in parsed if isinstance(u, str) and u.startswith("http")]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if raw.startswith("http"):
+            return [raw]
+    return []
+
+
 def send_car_details(to_phone: str, cars: list[dict], dealer_name: str = "") -> dict:
     """
     Format a list of inventory dicts into a WhatsApp message and send.
@@ -157,17 +177,12 @@ def send_car_details(to_phone: str, cars: list[dict], dealer_name: str = "") -> 
 
     photo_urls = []
     for c in cars[:5]:
-        url = c.get("image_url") or c.get("photo_url") or c.get("photos")
-        if isinstance(url, str) and url.startswith("http"):
-            photo_urls.append(url)
-        elif isinstance(url, list):
-            for u in url:
-                if isinstance(u, str) and u.startswith("http"):
-                    photo_urls.append(u)
-                    break
+        raw = c.get("image_url") or c.get("photo_url") or c.get("photos")
+        urls = _extract_urls(raw)
+        photo_urls.extend(urls)
 
     if photo_urls:
-        return send_media(to_phone, body, photo_urls[:5])
+        return send_media(to_phone, body, photo_urls[:10])
     return send_text(to_phone, body)
 
 
