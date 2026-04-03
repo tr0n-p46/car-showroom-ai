@@ -261,96 +261,100 @@ async def vapi_tts_handler(request: Request):
         )
         return Response(content=audio_content, media_type="audio/wav")
 
+_SEARCH_ALIASES = {
+    "car_make": "make",
+    "brand": "make",
+    "car_model": "model",
+    "price": "budget",
+    "max_price": "price_max",
+    "min_price": "price_min",
+    "fuel": "fuel_type",
+    "km": "kms_max",
+    "kms": "kms_max",
+    "max_kms": "kms_max",
+    "owner": "owners",
+}
+
+
+def _parse_tool_args(raw_args) -> dict:
+    if isinstance(raw_args, str):
+        try:
+            return json.loads(raw_args) if raw_args.strip() else {}
+        except json.JSONDecodeError:
+            return {}
+    if isinstance(raw_args, dict):
+        return raw_args
+    return {}
+
+
+def _execute_tool(function_name: str, args: dict):
+    if function_name == "search_cars":
+        allowed_keys = {
+            "budget", "model", "fuel_type", "make", "brand", "q",
+            "price_min", "price_max", "kms_min", "kms_max",
+            "transmission", "owners", "owners_min", "owners_max",
+            "reg_prefix", "status", "limit",
+        }
+        normalized = {}
+        for k, v in (args or {}).items():
+            key = _SEARCH_ALIASES.get(k, k)
+            if key in allowed_keys and v not in (None, "", "today", "tomorrow"):
+                normalized[key] = v
+        print(f"SEARCH FILTERS: {normalized}", flush=True)
+        return tools.search_cars(**normalized)
+
+    if function_name == "create_lead":
+        return tools.create_lead(
+            phone=args.get("phone"),
+            intent=args.get("intent"),
+            summary=args.get("summary"),
+        )
+
+    if function_name == "send_car_details_whatsapp":
+        wa_keys = {
+            "phone", "budget", "model", "fuel_type", "make",
+            "brand", "q", "price_min", "price_max",
+            "transmission", "limit",
+        }
+        filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
+        return tools.send_car_details_whatsapp(**filtered)
+
+    if function_name == "book_test_drive":
+        td_keys = {
+            "phone", "customer_name", "car_make", "car_model",
+            "date", "time",
+        }
+        filtered = {k: v for k, v in (args or {}).items() if k in td_keys}
+        return tools.book_test_drive(**filtered)
+
+    return "Error: Function not implemented."
+
+
 @app.post("/vapi-tools")
 async def vapi_tool_handler(request: Request):
     payload = await request.json()
     message = payload.get("message")
-    
-    # Extract tool call details
+
     tool_calls = (message or {}).get("toolCalls") or []
     if not tool_calls:
         return {"results": []}
 
-    tool_call = tool_calls[0] or {}
-    fn = (tool_call.get("function") or {})
-    function_name = fn.get("name")
-    raw_args = fn.get("arguments") or "{}"
+    results = []
+    for tc in tool_calls:
+        fn = (tc.get("function") or {})
+        function_name = fn.get("name")
+        args = _parse_tool_args(fn.get("arguments") or "{}")
+        print(f"TOOL CALL: {function_name} args={json.dumps(args, default=str)[:500]}", flush=True)
 
-    # VAPI commonly sends `arguments` as a JSON string.
-    if isinstance(raw_args, str):
         try:
-            args = json.loads(raw_args) if raw_args.strip() else {}
-        except json.JSONDecodeError:
-            args = {}
-    elif isinstance(raw_args, dict):
-        args = raw_args
-    else:
-        args = {}
+            result = _execute_tool(function_name, args)
+        except Exception as e:
+            print(f"TOOL ERROR: {function_name} → {e}", flush=True)
+            result = "Temporarily unavailable. Suggest the customer call back."
 
-    print(f"TOOL CALL: {function_name} args={json.dumps(args, default=str)[:500]}", flush=True)
+        results.append({"toolCallId": tc.get("id"), "result": result})
 
-    _SEARCH_ALIASES = {
-        "car_make": "make",
-        "brand": "make",
-        "car_model": "model",
-        "price": "budget",
-        "max_price": "price_max",
-        "min_price": "price_min",
-        "fuel": "fuel_type",
-        "km": "kms_max",
-        "kms": "kms_max",
-        "max_kms": "kms_max",
-        "owner": "owners",
-    }
-
-    try:
-        if function_name == "search_cars":
-            allowed_keys = {
-                "budget", "model", "fuel_type", "make", "brand", "q",
-                "price_min", "price_max", "kms_min", "kms_max",
-                "transmission", "owners", "owners_min", "owners_max",
-                "reg_prefix", "status", "limit",
-            }
-            normalized = {}
-            for k, v in (args or {}).items():
-                key = _SEARCH_ALIASES.get(k, k)
-                if key in allowed_keys and v not in (None, "", "today", "tomorrow"):
-                    normalized[key] = v
-            print(f"SEARCH FILTERS: {normalized}", flush=True)
-            result = tools.search_cars(**normalized)
-        elif function_name == "create_lead":
-            result = tools.create_lead(
-                phone=args.get("phone"),
-                intent=args.get("intent"),
-                summary=args.get("summary"),
-            )
-        elif function_name == "send_car_details_whatsapp":
-            wa_keys = {
-                "phone", "budget", "model", "fuel_type", "make",
-                "brand", "q", "price_min", "price_max",
-                "transmission", "limit",
-            }
-            filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
-            result = tools.send_car_details_whatsapp(**filtered)
-        elif function_name == "book_test_drive":
-            td_keys = {
-                "phone", "customer_name", "car_make", "car_model",
-                "date", "time",
-            }
-            filtered = {k: v for k, v in (args or {}).items() if k in td_keys}
-            result = tools.book_test_drive(**filtered)
-        else:
-            result = "Error: Function not implemented."
-    except Exception as e:
-        print(f"TOOL ERROR: {function_name} → {e}", flush=True)
-        result = f"Search temporarily unavailable. Suggest the customer call back or share preferences for a callback."
-
-    return {
-        "results": [{
-            "toolCallId": tool_call.get("id"),
-            "result": result
-        }]
-    }
+    return {"results": results}
 
 if __name__ == "__main__":
     # Get port from environment, or default to 8080
