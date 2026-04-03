@@ -182,3 +182,111 @@ def create_lead(phone, intent, summary):
     }
     res = supabase.table("leads").insert(data).execute()
     return "Lead recorded successfully. Tell the user a representative will contact them soon."
+
+
+def send_car_details_whatsapp(
+    *,
+    phone: str,
+    budget=None,
+    model: str | None = None,
+    fuel_type: str | None = None,
+    make: str | None = None,
+    brand: str | None = None,
+    q: str | None = None,
+    price_min=None,
+    price_max=None,
+    transmission: str | None = None,
+    limit: int | None = 5,
+):
+    """
+    Search inventory with the given filters and send matching cars
+    to the customer's WhatsApp number.
+    """
+    import whatsapp
+
+    if not phone:
+        return "Cannot send WhatsApp: no phone number provided. Ask the customer for their WhatsApp number."
+
+    cars = search_cars(
+        budget=budget,
+        model=model,
+        fuel_type=fuel_type,
+        make=make,
+        brand=brand,
+        q=q,
+        price_min=price_min,
+        price_max=price_max,
+        transmission=transmission,
+        limit=limit,
+    )
+
+    if isinstance(cars, str):
+        return f"No matching cars found to send. {cars}"
+
+    import os
+    dealer_name = os.getenv("DEALER_NAME", "")
+    result = whatsapp.send_car_details(phone, cars, dealer_name=dealer_name)
+
+    if result.get("ok"):
+        count = min(len(cars), 5)
+        return f"Sent {count} car option(s) to WhatsApp number {phone}. Tell the customer to check their WhatsApp."
+    return f"Could not send WhatsApp message: {result.get('error', 'unknown error')}. Apologize and offer to share details verbally instead."
+
+
+def book_test_drive(
+    *,
+    phone: str,
+    customer_name: str = "",
+    car_make: str = "",
+    car_model: str = "",
+    date: str = "",
+    time: str = "",
+):
+    """
+    Book a test drive: store in DB and send WhatsApp confirmation.
+    """
+    import whatsapp, os
+
+    if not phone:
+        return "Cannot book test drive: no phone number. Ask the customer for their number."
+    if not date:
+        return "Cannot book test drive: no date provided. Ask the customer when they'd like to come."
+
+    car_search = search_cars(make=car_make, model=car_model, limit=1)
+    car = {}
+    if isinstance(car_search, list) and car_search:
+        car = car_search[0]
+    else:
+        car = {"make": car_make, "model": car_model}
+
+    booking = {
+        "phone_number": phone,
+        "customer_name": customer_name or "",
+        "car_make": car.get("make", car_make),
+        "car_model": car.get("model", car_model),
+        "preferred_date": date,
+        "preferred_time": time or "To be confirmed",
+        "status": "booked",
+    }
+
+    try:
+        supabase.table("test_drive_bookings").insert(booking).execute()
+    except Exception as e:
+        print(f"Warning: could not save test drive booking to DB: {e}")
+
+    dealer_name = os.getenv("DEALER_NAME", "")
+    address = os.getenv("DEALER_ADDRESS", "")
+    result = whatsapp.send_test_drive_confirmation(
+        to_phone=phone,
+        car=car,
+        date=date,
+        time=time or "To be confirmed",
+        customer_name=customer_name,
+        dealer_name=dealer_name,
+        address=address,
+    )
+
+    if result.get("ok"):
+        return f"Test drive booked for {date} {time}. Confirmation sent to {phone} on WhatsApp. Let the customer know."
+    wa_err = result.get("error", "")
+    return f"Test drive booked for {date} {time} but WhatsApp confirmation failed ({wa_err}). Confirm the details verbally with the customer."

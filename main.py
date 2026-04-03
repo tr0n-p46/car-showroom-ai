@@ -288,25 +288,11 @@ async def vapi_tool_handler(request: Request):
         args = {}
 
     if function_name == "search_cars":
-        # Pass through supported filters (ignore unknown keys safely).
         allowed_keys = {
-            "budget",
-            "model",
-            "fuel_type",
-            "make",
-            "brand",
-            "q",
-            "price_min",
-            "price_max",
-            "kms_min",
-            "kms_max",
-            "transmission",
-            "owners",
-            "owners_min",
-            "owners_max",
-            "reg_prefix",
-            "status",
-            "limit",
+            "budget", "model", "fuel_type", "make", "brand", "q",
+            "price_min", "price_max", "kms_min", "kms_max",
+            "transmission", "owners", "owners_min", "owners_max",
+            "reg_prefix", "status", "limit",
         }
         filtered = {k: v for k, v in (args or {}).items() if k in allowed_keys}
         result = tools.search_cars(**filtered)
@@ -314,8 +300,23 @@ async def vapi_tool_handler(request: Request):
         result = tools.create_lead(
             phone=args.get("phone"),
             intent=args.get("intent"),
-            summary=args.get("summary")
+            summary=args.get("summary"),
         )
+    elif function_name == "send_car_details_whatsapp":
+        wa_keys = {
+            "phone", "budget", "model", "fuel_type", "make",
+            "brand", "q", "price_min", "price_max",
+            "transmission", "limit",
+        }
+        filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
+        result = tools.send_car_details_whatsapp(**filtered)
+    elif function_name == "book_test_drive":
+        td_keys = {
+            "phone", "customer_name", "car_make", "car_model",
+            "date", "time",
+        }
+        filtered = {k: v for k, v in (args or {}).items() if k in td_keys}
+        result = tools.book_test_drive(**filtered)
     else:
         result = "Error: Function not implemented."
 

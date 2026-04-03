@@ -8,3 +8,4 @@ onnxruntime
 numpy
 scipy
 requests
+twilio
