@@ -289,6 +289,20 @@ async def vapi_tool_handler(request: Request):
 
     print(f"TOOL CALL: {function_name} args={json.dumps(args, default=str)[:500]}", flush=True)
 
+    _SEARCH_ALIASES = {
+        "car_make": "make",
+        "brand": "make",
+        "car_model": "model",
+        "price": "budget",
+        "max_price": "price_max",
+        "min_price": "price_min",
+        "fuel": "fuel_type",
+        "km": "kms_max",
+        "kms": "kms_max",
+        "max_kms": "kms_max",
+        "owner": "owners",
+    }
+
     try:
         if function_name == "search_cars":
             allowed_keys = {
@@ -297,9 +311,13 @@ async def vapi_tool_handler(request: Request):
                 "transmission", "owners", "owners_min", "owners_max",
                 "reg_prefix", "status", "limit",
             }
-            filtered = {k: v for k, v in (args or {}).items() if k in allowed_keys}
-            print(f"SEARCH FILTERS: {filtered}", flush=True)
-            result = tools.search_cars(**filtered)
+            normalized = {}
+            for k, v in (args or {}).items():
+                key = _SEARCH_ALIASES.get(k, k)
+                if key in allowed_keys and v not in (None, "", "today", "tomorrow"):
+                    normalized[key] = v
+            print(f"SEARCH FILTERS: {normalized}", flush=True)
+            result = tools.search_cars(**normalized)
         elif function_name == "create_lead":
             result = tools.create_lead(
                 phone=args.get("phone"),
