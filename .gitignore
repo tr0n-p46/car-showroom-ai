@@ -1,4 +1,5 @@
 env/
+__pycache__/
 kokoro-v0_19.onnx
 voices.bin
 car-images/
