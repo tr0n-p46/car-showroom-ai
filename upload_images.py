@@ -41,7 +41,8 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def get_public_url(file_path_in_bucket: str) -> str:
-    return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{file_path_in_bucket}"
+    base = SUPABASE_URL.rstrip("/")
+    return f"{base}/storage/v1/object/public/{BUCKET}/{file_path_in_bucket}"
 
 
 def upload_file(local_path: Path, remote_name: str) -> str:

@@ -287,38 +287,45 @@ async def vapi_tool_handler(request: Request):
     else:
         args = {}
 
-    if function_name == "search_cars":
-        allowed_keys = {
-            "budget", "model", "fuel_type", "make", "brand", "q",
-            "price_min", "price_max", "kms_min", "kms_max",
-            "transmission", "owners", "owners_min", "owners_max",
-            "reg_prefix", "status", "limit",
-        }
-        filtered = {k: v for k, v in (args or {}).items() if k in allowed_keys}
-        result = tools.search_cars(**filtered)
-    elif function_name == "create_lead":
-        result = tools.create_lead(
-            phone=args.get("phone"),
-            intent=args.get("intent"),
-            summary=args.get("summary"),
-        )
-    elif function_name == "send_car_details_whatsapp":
-        wa_keys = {
-            "phone", "budget", "model", "fuel_type", "make",
-            "brand", "q", "price_min", "price_max",
-            "transmission", "limit",
-        }
-        filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
-        result = tools.send_car_details_whatsapp(**filtered)
-    elif function_name == "book_test_drive":
-        td_keys = {
-            "phone", "customer_name", "car_make", "car_model",
-            "date", "time",
-        }
-        filtered = {k: v for k, v in (args or {}).items() if k in td_keys}
-        result = tools.book_test_drive(**filtered)
-    else:
-        result = "Error: Function not implemented."
+    print(f"TOOL CALL: {function_name} args={json.dumps(args, default=str)[:500]}", flush=True)
+
+    try:
+        if function_name == "search_cars":
+            allowed_keys = {
+                "budget", "model", "fuel_type", "make", "brand", "q",
+                "price_min", "price_max", "kms_min", "kms_max",
+                "transmission", "owners", "owners_min", "owners_max",
+                "reg_prefix", "status", "limit",
+            }
+            filtered = {k: v for k, v in (args or {}).items() if k in allowed_keys}
+            print(f"SEARCH FILTERS: {filtered}", flush=True)
+            result = tools.search_cars(**filtered)
+        elif function_name == "create_lead":
+            result = tools.create_lead(
+                phone=args.get("phone"),
+                intent=args.get("intent"),
+                summary=args.get("summary"),
+            )
+        elif function_name == "send_car_details_whatsapp":
+            wa_keys = {
+                "phone", "budget", "model", "fuel_type", "make",
+                "brand", "q", "price_min", "price_max",
+                "transmission", "limit",
+            }
+            filtered = {k: v for k, v in (args or {}).items() if k in wa_keys}
+            result = tools.send_car_details_whatsapp(**filtered)
+        elif function_name == "book_test_drive":
+            td_keys = {
+                "phone", "customer_name", "car_make", "car_model",
+                "date", "time",
+            }
+            filtered = {k: v for k, v in (args or {}).items() if k in td_keys}
+            result = tools.book_test_drive(**filtered)
+        else:
+            result = "Error: Function not implemented."
+    except Exception as e:
+        print(f"TOOL ERROR: {function_name} → {e}", flush=True)
+        result = f"Search temporarily unavailable. Suggest the customer call back or share preferences for a callback."
 
     return {
         "results": [{
