@@ -201,11 +201,11 @@ def send_car_details_whatsapp(
     year_min=None,
     year_max=None,
     owners=None,
-    limit: int | None = 5,
+    limit: int | None = 3,
 ):
     """
     Search inventory with the given filters and send matching cars
-    to the customer's WhatsApp number.
+    to the customer's WhatsApp number.  Max 3 cars.
     """
     import whatsapp
 
@@ -249,7 +249,8 @@ def send_car_details_whatsapp(
     if isinstance(cars, str):
         return f"No matching cars found to send. {cars}"
 
-    # Re-fetch matched car IDs with image_url for WhatsApp media
+    cars = cars[:3]
+
     car_ids = [c["id"] for c in cars if c.get("id")]
     if car_ids:
         img_rows = supabase.table("inventory").select("id,image_url").in_("id", car_ids).execute().data or []
@@ -262,7 +263,7 @@ def send_car_details_whatsapp(
     result = whatsapp.send_car_details(phone, cars, dealer_name=dealer_name)
 
     if result.get("ok"):
-        count = min(len(cars), 5)
+        count = min(len(cars), 3)
         return f"Sent {count} car option(s) to WhatsApp number {phone}. Tell the customer to check their WhatsApp."
     err = result.get("error", "unknown error")
     if "parse phone" in err.lower():
@@ -286,8 +287,12 @@ def book_test_drive(
 
     if not phone:
         return "Cannot book test drive: no phone number. Ask the customer for their number."
+    if not car_make:
+        return "Cannot book test drive: no car specified. Ask the customer which car they want to test drive."
     if not date:
         return "Cannot book test drive: no date provided. Ask the customer when they'd like to come."
+    if not time or time.lower() in ("morning", "evening", "afternoon"):
+        return f"Cannot book test drive: need a specific time (e.g. 11 AM, 2 PM), not just '{time}'. Ask the customer for an approximate time."
 
     car_search = search_cars(make=car_make, model=car_model, limit=1)
     car = {}
