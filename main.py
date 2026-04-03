@@ -352,6 +352,8 @@ async def vapi_tool_handler(request: Request):
             print(f"TOOL ERROR: {function_name} → {e}", flush=True)
             result = "Temporarily unavailable. Suggest the customer call back."
 
+        result_preview = json.dumps(result, default=str)[:300] if not isinstance(result, str) else result[:300]
+        print(f"TOOL RESULT: {function_name} → {result_preview}", flush=True)
         results.append({"toolCallId": tc.get("id"), "result": result})
 
     return {"results": results}

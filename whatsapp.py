@@ -106,17 +106,23 @@ def send_text(to_phone: str, body: str) -> dict:
     """Send a plain text WhatsApp message. Returns status dict."""
     client = _get_client()
     if not client:
+        print("WA ERROR: Twilio not configured", flush=True)
         return {"ok": False, "error": "Twilio not configured (missing TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)"}
     from_num = _from_number()
     if not from_num:
+        print("WA ERROR: TWILIO_WHATSAPP_FROM not set", flush=True)
         return {"ok": False, "error": "TWILIO_WHATSAPP_FROM not set"}
     to = normalize_phone(to_phone)
     if not to:
+        print(f"WA ERROR: bad phone {to_phone}", flush=True)
         return {"ok": False, "error": f"Could not parse phone number: {to_phone}"}
     try:
+        print(f"WA SEND: from={from_num} to={to} body_len={len(body)}", flush=True)
         msg = client.messages.create(from_=from_num, to=to, body=body)
+        print(f"WA OK: sid={msg.sid} status={msg.status}", flush=True)
         return {"ok": True, "sid": msg.sid, "status": msg.status}
     except Exception as e:
+        print(f"WA EXCEPTION: {e}", flush=True)
         return {"ok": False, "error": str(e)}
 
 
@@ -124,21 +130,27 @@ def send_media(to_phone: str, body: str, media_urls: list[str]) -> dict:
     """Send a WhatsApp message with media (images)."""
     client = _get_client()
     if not client:
+        print("WA ERROR: Twilio not configured", flush=True)
         return {"ok": False, "error": "Twilio not configured"}
     from_num = _from_number()
     if not from_num:
+        print("WA ERROR: TWILIO_WHATSAPP_FROM not set", flush=True)
         return {"ok": False, "error": "TWILIO_WHATSAPP_FROM not set"}
     to = normalize_phone(to_phone)
     if not to:
+        print(f"WA ERROR: bad phone {to_phone}", flush=True)
         return {"ok": False, "error": f"Could not parse phone number: {to_phone}"}
     urls = [u for u in media_urls if u and str(u).startswith("http")]
     try:
+        print(f"WA SEND MEDIA: from={from_num} to={to} body_len={len(body)} urls={len(urls)}", flush=True)
         msg = client.messages.create(
             from_=from_num, to=to, body=body,
             media_url=urls if urls else None,
         )
+        print(f"WA OK: sid={msg.sid} status={msg.status}", flush=True)
         return {"ok": True, "sid": msg.sid, "status": msg.status}
     except Exception as e:
+        print(f"WA EXCEPTION: {e}", flush=True)
         return {"ok": False, "error": str(e)}
 
 
